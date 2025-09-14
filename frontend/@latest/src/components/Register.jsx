@@ -1,32 +1,8 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { signInWithPopup, GoogleAuthProvider, getAuth } from 'firebase/auth';
-import { app } from '../context/firebase';
-
-// ---------- Global Styles ----------
-const GlobalStyles = () => (
-  <style>{`
-    body {
-        font-family: 'Inter', sans-serif;
-        background-color: #f8f9fa;
-        color: #212529;
-    }
-    .card {
-        background-color: white;
-        border-radius: 1rem;
-        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        border: 1px solid #dee2e6;
-    }
-    .radio-card:checked + label {
-        border-color: #14b8a6;
-        --tw-ring-color: #14b8a6;
-        --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
-        --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
-        box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
-        background-color: #f0fdfa;
-    }
-  `}</style>
-);
+// Register.jsx (added GoogleOAuthProvider wrapper, fixed import)
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
+import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google"; // Added GoogleOAuthProvider
 
 // ---------- Icons ----------
 const UserIcon = ({ className }) => (
@@ -39,10 +15,6 @@ const SteeringWheelIcon = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 12h-3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12H3" />
   </svg>
 );
 
@@ -55,208 +27,138 @@ const GoogleIcon = ({ className }) => (
   </svg>
 );
 
-// ---------- Component ----------
 const Register = () => {
-  const [role, setRole] = useState('rider');
-  const [error, setError] = useState('');
+  const [role, setRole] = useState("rider");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
-  const auth = getAuth(app);
-  const googleProvider = new GoogleAuthProvider();
 
+  // Manual register
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
-    // Correct way to read form values
     const formData = new FormData(e.currentTarget);
-    const username = formData.get('username').trim();
-    const email = formData.get('email').trim();
-    const password = formData.get('password');
-
-    const backendRole = role === 'rider' ? 'commutator' : 'driver';
+    const username = formData.get("username").trim();
+    const email = formData.get("email").trim();
+    const password = formData.get("password");
+    const backendRole = role === "rider" ? "commutator" : "driver";
 
     try {
-      const res = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password, role: backendRole })
+      const res = await fetch("http://localhost:5000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, email, password, role: backendRole }),
       });
-const text = await res.text();
-const data = text ? JSON.parse(text) : {};
 
-if (!res.ok) throw new Error(data.message || 'Registration failed');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Registration failed");
 
-      navigate('/');
+      localStorage.setItem("token", data.token); // Add token storage for consistency
+      localStorage.setItem("user", JSON.stringify(data.user));
+      alert("Registration successful! Redirecting...");
+      navigate("/");
     } catch (err) {
       console.error(err);
       setError(err.message);
     }
   };
 
-  const googleLogin = async () => {
+  // Google OAuth
+  const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      setError('');
-      const response = await signInWithPopup(auth, googleProvider);
-      const user = response.user;
-      localStorage.setItem('token', await user.getIdToken());
-      navigate('/role');
+      const token = credentialResponse.credential;
+      const backendRole = role === "rider" ? "commutator" : "driver";
+
+      const res = await axios.post("http://localhost:5000/api/auth/google", {
+        token,
+        role: backendRole,
+      });
+
+      localStorage.setItem("token", res.data.token);
+      localStorage.setItem("user", JSON.stringify(res.data.user));
+
+      navigate("/"); // Changed to "/" for consistency; adjust if /role is needed for further setup
     } catch (err) {
       console.error(err);
-      setError('Failed to log in with Google.');
+      setError("Google signup failed.");
     }
   };
 
+  const handleGoogleError = () => {
+    setError("Google signup failed.");
+  };
+
   return (
-    <>
-      <GlobalStyles />
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-5xl w-full">
-          <div className="card overflow-hidden">
-            <div className="grid grid-cols-1 lg:grid-cols-5">
+    <GoogleOAuthProvider clientId="484107455321-21p2gog5t9bs2so07ka3tbffk6mha2m3.apps.googleusercontent.com">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-4xl w-full bg-white shadow-lg rounded-xl overflow-hidden grid lg:grid-cols-5">
+          {/* Left image */}
+          <div className="relative hidden lg:block lg:col-span-2">
+            <img
+              className="absolute inset-0 h-full w-full object-cover"
+              src="https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=1887&auto=format&fit=crop"
+              alt="Transit"
+            />
+            <div className="absolute inset-0 bg-teal-800 opacity-25"></div>
+          </div>
 
-              {/* Left Side */}
-              <div className="relative hidden lg:block lg:col-span-2">
-                <img
-                  className="absolute inset-0 w-full h-full object-cover"
-                  src="https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=1887&auto=format&fit=crop"
-                  alt="A bus on a bridge in a city"
-                />
-                <div className="absolute inset-0 bg-teal-800 opacity-25"></div>
-                <div className="relative p-12 flex flex-col justify-end h-full">
-                  <h2 className="text-3xl font-bold text-white leading-tight">
-                    Join the Network.
-                  </h2>
-                  <p className="text-white text-base mt-3 opacity-90">
-                    Help make your city's transit smarter and more reliable for everyone.
-                  </p>
+          {/* Right form */}
+          <div className="p-10 col-span-3">
+            <h1 className="text-3xl font-bold text-gray-900">Create an Account</h1>
+            <p className="mt-2 text-gray-600">Join the network today.</p>
+            {error && <p className="text-red-600 mt-2">{error}</p>}
+
+            <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Username</label>
+                <input name="username" type="text" required className="w-full px-4 py-3 border rounded-md mt-1" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Email</label>
+                <input name="email" type="email" required className="w-full px-4 py-3 border rounded-md mt-1" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Password</label>
+                <input name="password" type="password" required className="w-full px-4 py-3 border rounded-md mt-1" />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Role</label>
+                <div className="flex gap-4 mt-2">
+                  <label>
+                    <input type="radio" name="role" value="rider" checked={role==='rider'} onChange={() => setRole('rider')} />
+                    Rider
+                  </label>
+                  <label>
+                    <input type="radio" name="role" value="driver" checked={role==='driver'} onChange={() => setRole('driver')} />
+                    Driver
+                  </label>
                 </div>
               </div>
 
-              {/* Right Side: Registration Form */}
-              <div className="p-12 md:p-16 col-span-1 lg:col-span-3">
-                <div className="text-center md:text-left">
-                  <h1 className="text-3xl font-bold text-gray-900">Create an Account</h1>
-                  <p className="text-base text-gray-600 mt-2">
-                    Get started with City-Connect today.
-                  </p>
-                  {error && <p className="text-red-600 mt-2">{error}</p>}
-                </div>
+              <button type="submit" className="w-full bg-teal-600 text-white py-3 rounded-md">
+                Create Account
+              </button>
+            </form>
 
-                <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-                  <div className="space-y-4">
-                    <div>
-                      <label htmlFor="username" className="text-sm font-medium text-gray-700">Username</label>
-                      <input
-                        id="username"
-                        name="username"
-                        type="text"
-                        autoComplete="username"
-                        required
-                        className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                        placeholder="e.g., jane_doe"
-                      />
-                    </div>
+            <div className="mt-6 text-center">Or</div>
 
-                    <div>
-                      <label htmlFor="email" className="text-sm font-medium text-gray-700">Email address</label>
-                      <input
-                        id="email"
-                        name="email"
-                        type="email"
-                        autoComplete="email"
-                        required
-                        className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                        placeholder="you@example.com"
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="password" className="text-sm font-medium text-gray-700">Password</label>
-                      <input
-                        id="password"
-                        name="password"
-                        type="password"
-                        autoComplete="new-password"
-                        required
-                        className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                        placeholder="••••••••"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Role</label>
-                      <fieldset className="mt-2">
-                        <legend className="sr-only">Choose your role</legend>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <input type="radio" id="role-rider" name="role" value="rider"
-                                   className="sr-only radio-card"
-                                   checked={role === 'rider'}
-                                   onChange={() => setRole('rider')} />
-                            <label htmlFor="role-rider"
-                                   className="flex flex-col items-center justify-center text-center rounded-md p-4 border border-gray-300 cursor-pointer hover:bg-gray-50">
-                              <UserIcon className="h-7 w-7 text-gray-500 mb-2"/>
-                              <span className="text-sm font-medium text-gray-800">Register as a Rider</span>
-                            </label>
-                          </div>
-
-                          <div>
-                            <input type="radio" id="role-driver" name="role" value="driver"
-                                   className="sr-only radio-card"
-                                   checked={role === 'driver'}
-                                   onChange={() => setRole('driver')} />
-                            <label htmlFor="role-driver"
-                                   className="flex flex-col items-center justify-center text-center rounded-md p-4 border border-gray-300 cursor-pointer hover:bg-gray-50">
-                              <SteeringWheelIcon className="h-7 w-7 text-gray-500 mb-2"/>
-                              <span className="text-sm font-medium text-gray-800">Register as a Driver</span>
-                            </label>
-                          </div>
-                        </div>
-                      </fieldset>
-                    </div>
-                  </div>
-
-                  <div>
-                    <button
-                      type="submit"
-                      className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
-                      Create Account
-                    </button>
-                  </div>
-                </form>
-
-                <div className="mt-6 relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300" />
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-3 bg-white text-gray-500">Or</span>
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  <button
-                    onClick={googleLogin}
-                    type="button"
-                    className="group w-full flex justify-center items-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
-                    <GoogleIcon className="h-5 w-5 mr-3" />
-                    Sign up with Google
-                  </button>
-                </div>
-
-                <p className="mt-8 text-center text-sm text-gray-600">
-                  Already have an account?{' '}
-                  <Link to="/login" className="font-medium underline text-teal-400 hover:underline">
-                    Login
-                  </Link>
-                </p>
-              </div>
-
+            {/* GoogleLogin component directly */}
+            <div className="mt-4 flex justify-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={handleGoogleError}
+              />
             </div>
+
+            <p className="mt-6 text-sm text-gray-600">
+              Already have an account?{" "}
+              <Link to="/login" className="text-teal-500 underline">Login</Link>
+            </p>
           </div>
         </div>
       </div>
-    </>
+    </GoogleOAuthProvider>
   );
 };
 
